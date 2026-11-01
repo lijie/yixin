@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>一心飙车</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#140a20;color:#f4e9ff;font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;user-select:none;-webkit-user-select:none;touch-action:none}
+#wrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
+#stage{position:relative}
+canvas{display:block}
+.ov{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:18px;background:rgba(18,8,32,.86);text-align:center;overflow-y:auto}
+.ov.on{display:flex}
+h1{font-size:44px;letter-spacing:4px;color:#fff;text-shadow:0 0 12px #ff3e8a,0 0 26px #ff3e8a}
+h2{font-size:26px;color:#fff;text-shadow:0 0 10px #3ef0ff;margin-bottom:10px}
+.sub{color:#ffd23e;margin:8px 0 14px;font-size:16px}
+.box{background:rgba(255,255,255,.06);border:1px solid rgba(62,240,255,.4);border-radius:10px;padding:10px 14px;font-size:13.5px;line-height:1.75;text-align:left;max-width:360px;width:100%}
+.k{display:inline-block;padding:0 6px;border-radius:4px;font-weight:bold;color:#140a20}
+.btn{margin-top:16px;padding:11px 34px;font-size:18px;font-weight:bold;border:2px solid #ff3e8a;background:#2a0f33;color:#fff;border-radius:30px;cursor:pointer;box-shadow:0 0 14px #ff3e8a;font-family:inherit}
+.btn:active{transform:scale(.96)}
+.cards{display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px}
+.card{border:2px solid #3ef0ff;border-radius:12px;padding:10px 12px;background:#1d1030;cursor:pointer;text-align:left;color:#fff;font-family:inherit}
+.card b{font-size:17px;color:#3ef0ff}.card.bad{border-color:#ffd23e}.card.bad b{color:#ffd23e}
+.card p{font-size:13.5px;margin-top:4px;line-height:1.5;color:#e8dcf5}.card i{font-style:normal;color:#ff8a8a}
+.card:hover{background:#2a1846}
+.stars{font-size:46px;letter-spacing:6px;color:#ffd23e;text-shadow:0 0 12px #ffb000;margin:6px 0}
+.stat{font-size:15px;line-height:1.9}
+#mute{position:absolute;right:6px;bottom:6px;width:34px;height:30px;border-radius:8px;border:1px solid #3ef0ff88;background:#1d1030cc;color:#fff;font-size:15px;cursor:pointer;z-index:5}
+#touch{display:none;width:100%;height:96px;gap:6px;padding:6px 6px 8px}
+#touch.on{display:flex}
+.tb{flex:1;border-radius:14px;border:2px solid;background:#1d1030;color:#fff;font-size:16px;font-weight:bold;display:flex;align-items:center;justify-content:center;font-family:inherit;touch-action:none}
+.tb.dn{background:#4a2a66;filter:brightness(1.4)}
+.gap{width:8px}
+</style></head><body>
+<div id="wrap"><div id="stage"><canvas id="c"></canvas>
+<div class="ov on" id="ovTitle"><h1>一心飙车</h1><div class="sub">规则只有一条：同一时刻只能做一件事</div>
+<div class="box">车一直往前冲。转向、升档、开火、换弹你都能做，但<b style="color:#ff3e8a">按下新动作会打断当前动作</b>。<br>
+<span class="k" style="background:#3ef0ff">A/D ←/→</span> 转向（反应很快）<br>
+<span class="k" style="background:#ffd23e">W ↑</span> 按住升档（每档约 0.45 秒，撞车会掉档）<br>
+<span class="k" style="background:#ff3e8a">J</span> 按住开火（消耗弹匣，开火时会减速）<br>
+<span class="k" style="background:#6bff7a">K</span> 按住 1 秒换弹（被打断就重来）<br>
+跑完 5 段赛道，打败第 5 段的 Boss 卡车。每段之后三选一改装，改装能打破规则。冲出路面会损伤车况。<br><span style="color:#aaa">M 键静音 · 手机用底部按钮</span></div>
+<button class="btn" id="bStart">出发</button></div>
+<div class="ov" id="ovUp"><h2 id="upT">第 1 段完成</h2><div class="sub" id="upS">车况 +30。选一个改装（键盘 1/2/3）</div><div class="cards" id="cards"></div></div>
+<div class="ov" id="ovEnd"><h2 id="endT">抵达终点</h2><div class="stars" id="endStars">★★★</div><div class="stat" id="endStat"></div><button class="btn" id="bAgain">重新开始</button></div>
+<button id="mute" title="静音 (M)">🔊</button>
+</div>
+<div id="touch"><button class="tb" data-k="ArrowLeft" style="border-color:#3ef0ff">◀</button><button class="tb" data-k="ArrowRight" style="border-color:#3ef0ff">▶</button><div class="gap"></div><button class="tb" data-k="KeyW" style="border-color:#ffd23e">加速</button><button class="tb" data-k="KeyJ" style="border-color:#ff3e8a">开火</button><button class="tb" data-k="KeyK" style="border-color:#6bff7a">换弹</button></div>
+</div>
+<script>
+(()=>{
+const W=420,H=760,PY=500,RHW=112,HUDH=100;
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const COL={steer:'#3ef0ff',gear:'#ffd23e',fire:'#ff3e8a',reload:'#6bff7a'};
+const NAME={steer:'转向',gear:'加速',fire:'开火',reload:'换弹'};
+const KEYMAP={KeyA:['steer',-1],ArrowLeft:['steer',-1],KeyD:['steer',1],ArrowRight:['steer',1],KeyW:['gear'],ArrowUp:['gear'],KeyJ:['fire'],KeyK:['reload']};
+const GEARS=[170,230,290,350,410];
+const SEGS=[
+ {len:14000,gap:[560,840],pool:{chaser:2,blocker:3,barricade:2,barrel:2,repair:.6}},
+ {len:16000,gap:[500,760],pool:{chaser:2,blocker:2,barricade:2,barrel:2,gunner:2,repair:.6}},
+ {len:18000,gap:[460,700],pool:{chaser:3,blocker:2,barricade:2,barrel:2,gunner:2,bomber:2,repair:.6}},
+ {len:20000,gap:[400,620],pool:{chaser:3,blocker:2,barricade:2,barrel:2,gunner:3,bomber:3,repair:.7}},
+ {len:0,gap:[750,1050],pool:{chaser:2,bomber:2,repair:1}}];
+const MODS=[
+ {id:'reloadSteer',n:'换弹微调',d:'换弹时也能转向，不会打断换弹。'},
+ {id:'fireNoSlow',n:'稳定炮架',d:'开火时不再减速（默认开火会让速度上限 -20%）。'},
+ {id:'crashKeep',n:'防滚架',d:'撞车不掉档（仍然会掉车况）。'},
+ {id:'fireSteer',n:'边打边拐',d:'开火时也能转向（转向力度 60%）。'},
+ {id:'autoClutch',n:'离合助手',d:'做别的动作时，也会以 1/3 速度慢慢升档。'},
+ {id:'resumeReload',n:'断点续装',d:'换弹被打断时保留进度，下次接着装。'},
+ {id:'quickReload',n:'快速换弹',d:'换弹时间 1.0 秒 → 0.6 秒。'},
+ {id:'bigMag',n:'大弹匣',d:'弹匣容量 12 → 20，并立即装满。'},
+ {id:'heavyGun',n:'重炮',d:'子弹伤害 ×2。',bad:'副作用：换弹多 0.6 秒。'},
+ {id:'armor',n:'装甲板',d:'车况上限 +40 并修满。',bad:'副作用：升档慢 40%。'},
+ {id:'spread',n:'散弹枪',d:'每次射出 3 发扇形子弹。',bad:'副作用：射速 -35%。'}];
+let G,audio=null,muted=false;
+// ---------- audio ----------
+function ac(){if(!audio){try{audio=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}if(audio&&audio.state==='suspended')audio.resume();return audio}
+function tone(f,dur,type='square',vol=.05,f2){if(muted||!audio)return;const t=audio.currentTime,o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g).connect(audio.destination);o.start(t);o.stop(t+dur+.02)}
+function noise(dur,vol=.08){if(muted||!audio)return;const n=Math.floor(audio.sampleRate*dur),b=audio.createBuffer(1,n,audio.sampleRate),d=b.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);const s=audio.createBufferSource(),g=audio.createGain(),f=audio.createBiquadFilter();f.type='lowpass';f.frequency.value=900;s.buffer=b;g.gain.value=vol;s.connect(f).connect(g).connect(audio.destination);s.start()}
+const SFX={shot:()=>tone(880,.05,'square',.018,440),gear:()=>tone(330,.12,'sawtooth',.03,660),reload:()=>{tone(500,.04,'square',.03);setTimeout(()=>tone(900,.05,'square',.03),70)},hit:()=>{tone(160,.15,'sawtooth',.05,60);noise(.12,.05)},boom:()=>noise(.4,.1),intr:()=>tone(220,.08,'triangle',.03,150),pick:()=>tone(600,.2,'triangle',.04,1200)};
+// ---------- helpers ----------
+const rnd=(a,b)=>a+Math.random()*(b-a),clamp=(v,a,b)=>v<a?a:v>b?b:v;
+function roadX(d){return clamp(W/2+62*Math.sin(d/1400)+32*Math.sin(d/530+1.3),RHW+16,W-RHW-16)}
+function hash(n){const s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s)}
+// ---------- state ----------
+function newGame(){G={state:'title',seg:0,segStart:0,time:0,segTimes:[],mods:{},order:[],
+ p:{x:roadX(0),d:0,vx:0,speed:150,gear:1,gearT:0,hp:100,max:100,ammo:12,mag:12,reloadT:0,fireCD:0,inv:0,trail:[]},
+ active:null,lastIntr:null,msg:null,es:[],pb:[],eb:[],parts:[],rings:[],shake:0,nextSpawn:700,boss:null,bossDead:0,frame:0,stats:{kills:0,crashes:0,intr:0,dmg:{}}};
+ G.p.x=roadX(0);}
+newGame();
+const M=k=>!!G.mods[k];
+function reloadTime(){return (M('quickReload')?.6:1)+(M('heavyGun')?.6:0)}
+function gearTime(){return .45*(M('armor')?1.4:1)}
+function fireRate(){return 8*(M('spread')?.65:1)}
+// ---------- input (the one-action rule) ----------
+function actOf(code){return KEYMAP[code]?KEYMAP[code][0]:null}
+function activeAction(){const o=G.order;return o.length?actOf(o[o.length-1]):null}
+function press(code){if(!KEYMAP[code]||G.order.includes(code))return;ac();const prev=activeAction();G.order.push(code);const now=activeAction();
+ if(G.state==='race'&&prev&&prev!==now){const exempt=(prev==='reload'&&now==='steer'&&M('reloadSteer'))||(prev==='fire'&&now==='steer'&&M('fireSteer'));
+  if(!exempt){G.lastIntr={from:prev,to:now,t:1.6};G.stats.intr++;SFX.intr();}}}
+function release(code){const i=G.order.indexOf(code);if(i>=0)G.order.splice(i,1)}
+function steerKeyDir(){for(let i=G.order.length-1;i>=0;i--){const m=KEYMAP[G.order[i]];if(m[0]==='steer')return m[1]}return 0}
+// what the car effectively does this frame
+function effective(){let a=activeAction();const r={main:a,steer:0,steerK:1};
+ if(a==='steer'){const held=t=>G.order.some(c=>actOf(c)===t);
+  if(M('reloadSteer')&&held('reload')){r.main='reload';r.steer=steerKeyDir();return r}
+  if(M('fireSteer')&&held('fire')){r.main='fire';r.steer=steerKeyDir();r.steerK=.6;return r}}
+ if(a==='steer')r.steer=steerKeyDir();
+ else{const lower=G.order.slice(0,-1).some(c=>actOf(c)==='steer');
+  if(lower&&a==='reload'&&M('reloadSteer'))r.steer=steerKeyDir();
+  if(lower&&a==='fire'&&M('fireSteer')){r.steer=steerKeyDir();r.steerK=.6}}
+ return r}
+addEventListener('keydown',e=>{if(e.code==='KeyM'){toggleMute();return}
+ if(G.state==='upgrade'&&/Digit[123]/.test(e.code)){pickMod(+e.code[5]-1);return}
+ if(KEYMAP[e.code]){e.preventDefault();if(!e.repeat)press(e.code)}});
+addEventListener('keyup',e=>{if(KEYMAP[e.code])release(e.code)});
+addEventListener('blur',()=>{G.order=[]});
+document.querySelectorAll('.tb').forEach(b=>{const k=b.dataset.k;
+ const dn=e=>{e.preventDefault();b.classList.add('dn');press(k)},up=e=>{e.preventDefault();b.classList.remove('dn');release(k)};
+ b.addEventListener('pointerdown',dn);b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);b.addEventListener('pointerleave',up);b.addEventListener('contextmenu',e=>e.preventDefault())});
+function toggleMute(){muted=!muted;$('mute').textContent=muted?'🔇':'🔊'}
+$('mute').onclick=e=>{e.stopPropagation();toggleMute()};
+// ---------- spawning ----------
+const DEF={chaser:{w:26,h:42,hp:2,c:'#ff8a2a'},blocker:{w:40,h:46,hp:3,c:'#a45bff'},gunner:{w:32,h:46,hp:3,c:'#2ee6c8'},bomber:{w:24,h:36,hp:1,c:'#ff3030'},
+ barricade:{w:76,h:16,hp:5,c:'#ffb02e'},barrel:{w:22,h:22,hp:1,c:'#e0402a'},repair:{w:24,h:24,hp:99,c:'#6bff7a'},boss:{w:96,h:120,hp:60,c:'#ff3e8a'}};
+function spawn(type,d,off){const df=DEF[type],e={type,w:df.w,h:df.h,hp:df.hp,max:df.hp,c:df.c,d,x:roadX(d)+off,v:0,t:0,cd:rnd(.8,1.6),flash:0,trail:[],bump:0};
+ G.es.push(e);return e}
+function spawnRandom(){const S=SEGS[G.seg],p=G.p;let tot=0;for(const k in S.pool)tot+=S.pool[k];let r=Math.random()*tot,type='chaser';for(const k in S.pool){r-=S.pool[k];if(r<=0){type=k;break}}
+ const off=rnd(-RHW+30,RHW-30);
+ if(type==='chaser'){const e=spawn(type,p.d-(H-PY)-60,clamp(p.x-roadX(p.d)+rnd(-40,40),-RHW+20,RHW-20));e.v=p.speed+90}
+ else if(type==='blocker'){const e=spawn(type,p.d+PY+80,off);e.v=115}
+ else if(type==='gunner'){const e=spawn(type,p.d+PY+80,off);e.v=p.speed;e.life=11}
+ else if(type==='bomber'){const e=spawn(type,p.d+PY+90,off);e.v=-110}
+ else spawn(type,p.d+PY+80,off)}
+function startSeg(){G.segStart=G.p.d;G.nextSpawn=G.p.d+600;G.segTime=0;
+ if(G.seg===4){const b=spawn('boss',G.p.d+PY+140,0);b.v=G.p.speed+60;G.boss=b;b.cd=2;b.drop=3;G.msg={text:'Boss 卡车出现了！把它打爆',t:2.5}}
+ else G.msg={text:'第 '+(G.seg+1)+' 段 · 开冲！',t:1.8}}
+// ---------- effects ----------
+function burst(x,d,c,n=14,sp=160){for(let i=0;i<n;i++){const a=Math.random()*6.28,s=rnd(30,sp);G.parts.push({x,d,vx:Math.cos(a)*s,vd:Math.sin(a)*s,life:rnd(.3,.7),c})}}
+function explode(x,d,r,dmgP,dmgE){G.rings.push({x,d,r:0,R:r,life:.4});burst(x,d,'#ffb02e',26,260);SFX.boom();G.shake=Math.max(G.shake,9);
+ for(const e of G.es)if(e.hp>0&&e.type!=='repair'&&Math.hypot(e.x-x,e.d-d)<r+e.w/2)damageE(e,dmgE);
+ const p=G.p;if(dmgP&&Math.hypot(p.x-x,p.d-d)<r+14)hurt(dmgP,false,'boom')}
+function hurt(n,crash,src='?'){const p=G.p;if(p.inv>0)return;p.hp-=n;G.stats.dmg[src]=(G.stats.dmg[src]||0)+n;p.inv=.9;G.shake=Math.max(G.shake,10);SFX.hit();
+ if(crash){G.stats.crashes++;if(!M('crashKeep')&&p.gear>1){p.gear--;p.gearT=0;G.msg={text:'撞车掉档！',t:1}}p.speed*=.7}}
+function damageE(e,n){if(e.hp<=0||e.type==='repair')return;e.hp-=n;e.flash=.1;
+ if(e.hp<=0){burst(e.x,e.d,e.c,20,220);if(e.type==='barrel'){e.hp=0;explode(e.x,e.d,75,12,3)}else if(e.type==='bomber'){explode(e.x,e.d,55,0,2)}else SFX.boom();
+  if(e.type!=='barrel'&&e.type!=='barricade')G.stats.kills++;
+  if(e.type==='boss'){G.bossDead=1.6;for(let i=0;i<5;i++)setTimeout(()=>G&&burst(e.x+rnd(-40,40),e.d+rnd(-50,50),'#ffd23e',30,300),i*200);G.shake=16}}}
+// ---------- update ----------
+function update(dt){G.frame++;const p=G.p;if(G.state!=='race'){updFx(dt);return}
+ G.time+=dt;G.segTime+=dt;
+ const eff=effective();G.active=eff.main;
+ // gear
+ if(eff.main==='gear'){p.gearT+=dt/gearTime();}else if(M('autoClutch'))p.gearT+=dt/gearTime()/3;else p.gearT=0;
+ if(p.gearT>=1){p.gearT=0;if(p.gear<5){p.gear++;SFX.gear()}}
+ if(p.gear>=5)p.gearT=0;
+ // reload
+ if(eff.main==='reload'){if(p.ammo<p.mag){p.reloadT+=dt;if(p.reloadT>=reloadTime()){p.ammo=p.mag;p.reloadT=0;SFX.reload()}}}
+ else if(!M('resumeReload'))p.reloadT=0;
+ // fire
+ p.fireCD-=dt;
+ if(eff.main==='fire'){if(p.ammo>0){if(p.fireCD<=0){p.fireCD=1/fireRate();p.ammo--;const dm=M('heavyGun')?2:1;
+    const angs=M('spread')?[-.16,0,.16]:[0];for(const a of angs)G.pb.push({x:p.x,d:p.d+24,vx:Math.sin(a)*900+p.vx*.3,vd:Math.cos(a)*900+p.speed,dmg:dm,life:.8});
+    G.shake=Math.max(G.shake,2.5);SFX.shot()}}else if(!G.msg||G.msg.t<.2)G.msg={text:'弹匣空了！按住 K 换弹',t:1}}
+ // speed
+ const rx=roadX(p.d),off=Math.abs(p.x-rx)>RHW-12;
+ let target=GEARS[p.gear-1];if(eff.main==='fire'&&!M('fireNoSlow'))target*=.8;if(off)target*=.55;
+ p.speed+=(target-p.speed)*Math.min(1,dt*1.6);
+ if(off){p.hp-=7*dt;G.stats.dmg.off=(G.stats.dmg.off||0)+7*dt;if(G.frame%6===0)burst(p.x,p.d-20,'#d9a56b',2,60)}
+ // steering
+ if(eff.steer){p.vx+=(eff.steer*330*eff.steerK-p.vx)*Math.min(1,dt*16)}else p.vx*=1-Math.min(1,dt*10);
+ p.x=clamp(p.x+p.vx*dt,16,W-16);p.d+=p.speed*dt;p.inv-=dt;
+ p.trail.push({x:p.x,d:p.d});if(p.trail.length>16)p.trail.shift();
+ // spawn
+ if(p.d>=G.nextSpawn){spawnRandom();const S=SEGS[G.seg];G.nextSpawn=p.d+rnd(S.gap[0],S.gap[1])}
+ // enemies
+ for(const e of G.es){e.t+=dt;e.flash-=dt;const pr=roadX(e.d);
+  if(e.type==='chaser'){if(e.bump>0){e.bump-=dt;e.v=p.speed-50}else{e.v=Math.max(p.speed+60,250);if(e.d<p.d-90)e.x+=clamp(p.x-e.x,-1,1)*45*dt}}
+  else if(e.type==='blocker'){e.x+=clamp(p.x-e.x,-1,1)*32*dt}
+  else if(e.type==='gunner'){const want=300;e.life-=dt;if(e.life>0)e.v=p.speed+clamp(want-(e.d-p.d),-150,150);else e.v=p.speed+200;
+   e.x+=Math.sin(e.t*1.3)*40*dt;e.cd-=dt;if(e.cd<=0&&e.d-p.d<PY-HUDH){e.cd=2.1;const dx=p.x-e.x,dd=p.d-e.d,L=Math.hypot(dx,dd);G.eb.push({x:e.x,d:e.d-24,vx:dx/L*220,vd:p.speed+dd/L*220,life:3})}}
+  else if(e.type==='bomber'){e.x+=clamp(p.x-e.x,-1,1)*50*dt}
+  else if(e.type==='boss'){const want=320;e.v=p.speed+clamp(want-(e.d-p.d),-200,200);e.x+=(roadX(e.d)+Math.sin(e.t*.7)*70-e.x)*Math.min(1,dt*1.5);
+   e.cd-=dt;if(e.cd<=0){e.cd=2.3;for(const a of [-.35,0,.35]){const dx=p.x-e.x,dd=p.d-e.d,an=Math.atan2(dx,-dd)+a;G.eb.push({x:e.x,d:e.d-60,vx:Math.sin(an)*230,vd:p.speed-Math.cos(an)*230,life:3.5})}}
+   e.drop-=dt;if(e.drop<=0){e.drop=4.5;spawn('barrel',e.d-70,e.x-roadX(e.d-70))}}
+  const nr=roadX(e.d+e.v*dt);e.d+=e.v*dt;if(e.type!=='barrel'&&e.type!=='barricade'&&e.type!=='repair')e.x+=nr-pr;
+  if(e.type!=='boss'&&e.type!=='barricade'&&e.type!=='barrel'&&e.type!=='repair')e.x=clamp(e.x,roadX(e.d)-RHW+e.w/2,roadX(e.d)+RHW-e.w/2);
+  if(e.v){e.trail.push({x:e.x,d:e.d});if(e.trail.length>8)e.trail.shift()}
+  // collide with player
+  if(e.hp>0&&Math.abs(e.x-p.x)<(e.w+24)/2&&Math.abs(e.d-p.d)<(e.h+42)/2){
+   if(e.type==='repair'){p.hp=Math.min(p.max,p.hp+20);e.hp=0;G.msg={text:'修理包 +20',t:1};SFX.pick();burst(e.x,e.d,'#6bff7a',16)}
+   else if(e.type==='bomber'||e.type==='barrel'){e.hp=0;explode(e.x,e.d,60,e.type==='bomber'?18:12,2);if(!M('crashKeep')&&p.gear>1){p.gear--;p.gearT=0}}
+   else if(p.inv<=0){const dmg={chaser:6,blocker:8,gunner:10,barricade:12,boss:16}[e.type];hurt(dmg,true,e.type);
+    if(e.type==='boss'){p.speed*=.5}else damageE(e,1);
+    if(e.type==='chaser')e.bump=2.5;const sep=(e.h+42)/2+6;if(e.type!=='boss')e.d=e.d<p.d?p.d-sep:p.d+sep;p.vx=(p.x<e.x?-1:1)*260;burst((p.x+e.x)/2,(p.d+e.d)/2,'#fff',10)}}
+ }
+ G.es=G.es.filter(e=>{const sy=PY-(e.d-p.d);return e.hp>0&&sy<H+220&&sy>-500});
+ // bullets
+ for(const b of G.pb){b.x+=b.vx*dt;b.d+=b.vd*dt;b.life-=dt;
+  for(const e of G.es)if(e.hp>0&&e.type!=='repair'&&Math.abs(e.x-b.x)<e.w/2+3&&Math.abs(e.d-b.d)<e.h/2+6){damageE(e,b.dmg);b.life=0;burst(b.x,b.d,'#ff9ac4',4,90);break}}
+ G.pb=G.pb.filter(b=>b.life>0&&PY-(b.d-p.d)>HUDH-20);
+ for(const b of G.eb){b.x+=b.vx*dt;b.d+=b.vd*dt;b.life-=dt;if(Math.abs(b.x-p.x)<14&&Math.abs(b.d-p.d)<22){b.life=0;hurt(7,false,'bullet');burst(b.x,b.d,'#ff5050',8)}}
+ G.eb=G.eb.filter(b=>b.life>0);
+ updFx(dt);
+ // timers
+ if(G.lastIntr){G.lastIntr.t-=dt;if(G.lastIntr.t<=0)G.lastIntr=null}
+ // progress / end
+ if(p.hp<=0){p.hp=0;burst(p.x,p.d,'#ff3e8a',40,300);SFX.boom();finish(false);return}
+ if(G.seg<4&&p.d-G.segStart>=SEGS[G.seg].len){G.segTimes.push(G.segTime);toUpgrade()}
+ if(G.boss&&G.boss.hp<=0&&G.bossDead>0){G.bossDead-=dt;if(G.bossDead<=0){G.segTimes.push(G.segTime);finish(true)}}
+}
+function updFx(dt){if(G.msg){G.msg.t-=dt;if(G.msg.t<=0)G.msg=null}
+ for(const q of G.parts){q.x+=q.vx*dt;q.d+=q.vd*dt;q.life-=dt}G.parts=G.parts.filter(q=>q.life>0);
+ for(const r of G.rings){r.life-=dt;r.r=r.R*(1-r.life/.4)}G.rings=G.rings.filter(r=>r.life>0);G.shake*=Math.pow(.02,dt)}
+// ---------- flow ----------
+function show(id){['ovTitle','ovUp','ovEnd'].forEach(o=>$(o).classList.toggle('on',o===id))}
+function start(){ac();newGame();G.state='race';show(null);startSeg()}
+let offer=[];
+function toUpgrade(){G.state='upgrade';G.order=[];G.es=[];G.eb=[];G.pb=[];const p=G.p;p.hp=Math.min(p.max,p.hp+30);
+ const pool=MODS.filter(m=>!G.mods[m.id]);offer=[];while(offer.length<3&&pool.length)offer.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+ $('upT').textContent='第 '+(G.seg+1)+' 段完成 · 用时 '+fmt(G.segTime);
+ $('cards').innerHTML='';offer.forEach((m,i)=>{const b=document.createElement('button');b.className='card'+(m.bad?' bad':'');b.innerHTML='<b>'+(i+1)+'. '+m.n+'</b><p>'+m.d+(m.bad?' <i>'+m.bad+'</i>':'')+'</p>';b.onclick=()=>pickMod(i);$('cards').appendChild(b)});show('ovUp')}
+function pickMod(i){if(G.state!=='upgrade'||!offer[i])return;const m=offer[i],p=G.p;G.mods[m.id]=true;
+ if(m.id==='bigMag'){p.mag=20;p.ammo=20}if(m.id==='armor'){p.max+=40;p.hp=p.max}
+ SFX.pick();G.seg++;G.state='race';show(null);startSeg()}
+const PAR=SEGS.slice(0,4).reduce((s,x)=>s+x.len/320,0)+60;
+function fmt(t){t=Math.max(0,t);return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')}
+function finish(win){G.state='result';G.order=[];G.win=win;const p=G.p;let stars=0;
+ if(win){stars=1+(p.hp/p.max>=.5?1:0)+(G.time<=PAR?1:0)}G.stars=stars;
+ $('endT').textContent=win?'Boss 卡车被打爆，抵达终点！':'车报废了……';
+ $('endStars').textContent=win?'★'.repeat(stars)+'☆'.repeat(3-stars):'☆☆☆';
+ const mods=Object.keys(G.mods).map(k=>MODS.find(m=>m.id===k).n).join('、')||'无';
+ $('endStat').innerHTML=(win?'':'止步第 '+(G.seg+1)+' 段<br>')+'总用时 '+fmt(G.time)+'（3 星参考 ≤ '+fmt(PAR)+'）<br>剩余车况 '+Math.ceil(p.hp)+' / '+p.max+'<br>击毁敌车 '+G.stats.kills+' · 撞车 '+G.stats.crashes+' · 被打断 '+G.stats.intr+' 次<br>改装：'+mods+(win?'<br><span style="color:#aaa;font-size:13px">星级：通关 1 星，车况过半 +1，用时达标 +1</span>':'');
+ setTimeout(()=>show('ovEnd'),win?0:500)}
+$('bStart').onclick=start;$('bAgain').onclick=start;
+// ---------- render ----------
+function sy(d){return PY-(d-G.p.d)}
+function rr(x,y,w,h,r){cx.beginPath();cx.roundRect?cx.roundRect(x,y,w,h,r):cx.rect(x,y,w,h)}
+function drawCar(x,y,w,h,body,glow,front){cx.save();cx.translate(x,y);if(!front)cx.rotate(Math.PI);
+ cx.shadowColor=glow;cx.shadowBlur=12;cx.fillStyle=body;rr(-w/2,-h/2,w,h,6);cx.fill();cx.shadowBlur=0;cx.lineWidth=2;cx.strokeStyle=glow;cx.stroke();
+ cx.fillStyle='rgba(20,10,40,.75)';rr(-w/2+4,-h/2+8,w-8,h*.28,3);cx.fill();rr(-w/2+5,h*.12,w-10,h*.2,3);cx.fill();
+ cx.fillStyle='#fff7c0';cx.fillRect(-w/2+3,-h/2,5,3);cx.fillRect(w/2-8,-h/2,5,3);cx.fillStyle='#ff2050';cx.fillRect(-w/2+3,h/2-3,6,3);cx.fillRect(w/2-9,h/2-3,6,3);cx.restore()}
+function render(){const p=G.p;cx.save();if(G.shake>.3)cx.translate(rnd(-G.shake,G.shake)*.6,rnd(-G.shake,G.shake)*.6);
+ // desert dusk
+ const g=cx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#4a2250');g.addColorStop(.5,'#9a4a55');g.addColorStop(1,'#d98452');cx.fillStyle=g;cx.fillRect(-20,-20,W+40,H+40);
+ // dunes/decor
+ const base=Math.floor((p.d-PY-200)/90);for(let i=base;i<base+14;i++){for(let k=0;k<3;k++){const h1=hash(i*3+k),x=h1*W,d=i*90+hash(i*7+k)*90,y=sy(d);if(Math.abs(x-roadX(d))<RHW+20)continue;
+   if(h1>.8){cx.strokeStyle='#5fd18a';cx.lineWidth=4;cx.lineCap='round';cx.beginPath();cx.moveTo(x,y+10);cx.lineTo(x,y-10);cx.moveTo(x-7,y-2);cx.lineTo(x-7,y-7);cx.moveTo(x,y);cx.lineTo(x-7,y-2);cx.moveTo(x+7,y-4);cx.lineTo(x+7,y-10);cx.moveTo(x,y-2);cx.lineTo(x+7,y-4);cx.stroke()}
+   else{cx.fillStyle='rgba(80,30,60,.25)';cx.beginPath();cx.ellipse(x,y,14+h1*30,5+h1*6,0,0,6.28);cx.fill()}}}
+ // road
+ cx.fillStyle='#24172f';cx.beginPath();for(let y=-10;y<=H+10;y+=10){cx.lineTo(roadX(p.d+PY-y)-RHW,y)}for(let y=H+10;y>=-10;y-=10){cx.lineTo(roadX(p.d+PY-y)+RHW,y)}cx.fill();
+ for(const [s,c] of [[-1,'#ff3e8a'],[1,'#3ef0ff']]){cx.strokeStyle=c;cx.lineWidth=3;cx.shadowColor=c;cx.shadowBlur=10;cx.beginPath();for(let y=-10;y<=H+10;y+=10)cx.lineTo(roadX(p.d+PY-y)+s*RHW,y);cx.stroke()}cx.shadowBlur=0;
+ cx.fillStyle='rgba(255,210,62,.55)';const d0=Math.floor((p.d-(H-PY))/80)*80;for(let d=d0;d<p.d+PY+80;d+=80){const y=sy(d);cx.fillRect(roadX(d)-2,y-24,4,24)}
+ // trails
+ for(const e of G.es)if(e.trail.length>1&&e.type!=='boss'){for(let i=0;i<e.trail.length;i++){const t=e.trail[i],a=i/e.trail.length;cx.fillStyle=e.c;cx.globalAlpha=a*.25;cx.fillRect(t.x-e.w/2+4,sy(t.d)+ (e.v>=0?e.h/2-4:-e.h/2),e.w-8,6)}cx.globalAlpha=1}
+ for(let i=0;i<p.trail.length;i++){const t=p.trail[i],a=i/p.trail.length,y=sy(t.d)+21+(p.trail.length-i)*3.2;cx.globalAlpha=a*.55;cx.fillStyle=COL[G.active]||'#ff3e8a';cx.fillRect(t.x-9,y,4,7);cx.fillRect(t.x+5,y,4,7)}cx.globalAlpha=1;
+ // entities
+ for(const e of G.es){const y=sy(e.d);const fl=e.flash>0;
+  if(e.type==='barricade'){cx.fillStyle=fl?'#fff':'#2a1a10';rr(e.x-e.w/2,y-e.h/2,e.w,e.h,3);cx.fill();cx.save();cx.beginPath();cx.rect(e.x-e.w/2,y-e.h/2,e.w,e.h);cx.clip();cx.fillStyle='#ffb02e';for(let i=-2;i<8;i++){cx.beginPath();cx.moveTo(e.x-e.w/2+i*14,y+e.h/2);cx.lineTo(e.x-e.w/2+i*14+7,y+e.h/2);cx.lineTo(e.x-e.w/2+i*14+17,y-e.h/2);cx.lineTo(e.x-e.w/2+i*14+10,y-e.h/2);cx.fill()}cx.restore();cx.strokeStyle='#ffb02e';cx.lineWidth=2;rr(e.x-e.w/2,y-e.h/2,e.w,e.h,3);cx.stroke()}
+  else if(e.type==='barrel'){cx.shadowColor='#ff5030';cx.shadowBlur=10;cx.fillStyle=fl?'#fff':'#c8301e';cx.beginPath();cx.arc(e.x,y,11,0,6.28);cx.fill();cx.shadowBlur=0;cx.strokeStyle='#ffd23e';cx.lineWidth=2;cx.stroke();cx.fillStyle='#ffd23e';cx.font='bold 11px sans-serif';cx.textAlign='center';cx.textBaseline='middle';cx.fillText('!',e.x,y+1)}
+  else if(e.type==='repair'){const s=1+Math.sin(e.t*6)*.08;cx.save();cx.translate(e.x,y);cx.scale(s,s);cx.shadowColor='#6bff7a';cx.shadowBlur=12;cx.fillStyle='#173a22';rr(-12,-12,24,24,5);cx.fill();cx.strokeStyle='#6bff7a';cx.lineWidth=2;cx.stroke();cx.fillStyle='#6bff7a';cx.fillRect(-3,-8,6,16);cx.fillRect(-8,-3,16,6);cx.restore();cx.shadowBlur=0}
+  else if(e.type==='boss'){cx.save();cx.translate(e.x,y);cx.shadowColor='#ff3e8a';cx.shadowBlur=16;cx.fillStyle=fl?'#fff':'#3a1440';rr(-48,-60,96,82,6);cx.fill();cx.strokeStyle='#ff3e8a';cx.lineWidth=3;cx.stroke();cx.fillStyle=fl?'#fff':'#6a1d5a';rr(-40,24,80,36,6);cx.fill();cx.stroke();cx.shadowBlur=0;
+    cx.fillStyle='#ffd23e';cx.font='bold 16px sans-serif';cx.textAlign='center';cx.textBaseline='middle';cx.fillText('BOSS',0,-20);cx.fillStyle='#ff2050';cx.fillRect(-44,56,14,4);cx.fillRect(30,56,14,4);
+    cx.fillStyle='#ffb02e';cx.beginPath();cx.arc(-20,46,6,0,6.28);cx.arc(20,46,6,0,6.28);cx.fill();cx.restore()}
+  else{let body=fl?'#fff':'#2a1838';if(e.type==='bomber'&&Math.sin(e.t*16)>0)body='#7a1010';drawCar(e.x,y,e.w,e.h,body,e.c,e.type!=='bomber');
+   if(e.type==='gunner'){cx.fillStyle=e.c;cx.fillRect(e.x-3,y-e.h/2-2,6,10);cx.beginPath();cx.arc(e.x,y-4,7,0,6.28);cx.fill()}
+   if(e.type==='blocker'){cx.strokeStyle=e.c;cx.lineWidth=2;cx.beginPath();cx.moveTo(e.x-e.w/2-4,y+e.h/2+4);cx.lineTo(e.x+e.w/2+4,y+e.h/2+4);cx.stroke()}
+   if(e.max>1&&e.hp<e.max){cx.fillStyle='#0008';cx.fillRect(e.x-14,y-e.h/2-8,28,4);cx.fillStyle=e.c;cx.fillRect(e.x-14,y-e.h/2-8,28*e.hp/e.max,4)}}}
+ for(const e of G.es)if(e.type==='chaser'&&sy(e.d)>H-10&&e.bump<=0){cx.fillStyle='#ff8a2a';cx.globalAlpha=.5+.5*Math.sin(G.frame*.4);cx.beginPath();cx.moveTo(e.x,H-26);cx.lineTo(e.x-10,H-8);cx.lineTo(e.x+10,H-8);cx.fill();cx.globalAlpha=1}
+ // player
+ if(G.state!=='result'||G.win){if(!(p.inv>0&&Math.floor(p.inv*20)%2))drawCar(p.x,PY,24,42,'#1a2a48',COL[G.active]||'#ffffff',true);
+  cx.save();cx.translate(p.x,PY);cx.rotate(clamp(p.vx/1600,-.2,.2));cx.restore()}
+ // bullets
+ cx.fillStyle='#ff9ac4';cx.shadowColor='#ff3e8a';cx.shadowBlur=8;for(const b of G.pb){cx.fillRect(b.x-2,sy(b.d)-8,4,12)}
+ cx.fillStyle='#ffe25a';cx.shadowColor='#ff8000';for(const b of G.eb){cx.beginPath();cx.arc(b.x,sy(b.d),5,0,6.28);cx.fill()}cx.shadowBlur=0;
+ for(const q of G.parts){cx.globalAlpha=Math.min(1,q.life*2);cx.fillStyle=q.c;cx.fillRect(q.x-2,sy(q.d)-2,4,4)}cx.globalAlpha=1;
+ for(const r of G.rings){cx.strokeStyle='rgba(255,200,80,'+(r.life*2.5)+')';cx.lineWidth=4;cx.beginPath();cx.arc(r.x,sy(r.d),r.r,0,6.28);cx.stroke()}
+ cx.restore();
+ if(G.state!=='title')hud()}
+function hud(){const p=G.p;cx.fillStyle='rgba(16,8,32,.95)';cx.fillRect(0,0,W,HUDH);cx.fillStyle='#ff3e8a';cx.fillRect(0,HUDH-2,W,2);
+ cx.textBaseline='middle';cx.textAlign='left';cx.font='bold 12px sans-serif';
+ cx.fillStyle='#ccc';cx.fillText('车况',10,15);cx.fillStyle='#0006';cx.fillRect(40,9,110,12);const hr=p.hp/p.max;cx.fillStyle=hr>.5?'#6bff7a':hr>.25?'#ffd23e':'#ff4040';cx.fillRect(40,9,110*clamp(hr,0,1),12);cx.strokeStyle='#fff5';cx.strokeRect(40,9,110,12);
+ cx.fillStyle='#fff';cx.font='bold 11px sans-serif';cx.fillText(Math.ceil(p.hp)+'',154,15);
+ cx.font='bold 12px sans-serif';cx.fillStyle='#ccc';cx.fillText('档位',182,15);for(let i=0;i<5;i++){cx.fillStyle=i<p.gear?'#ffd23e':'#ffffff22';cx.fillRect(212+i*13,8,10,10)}
+ cx.fillStyle='#ffd23e';cx.fillRect(212,20,62*p.gearT,2);
+ cx.fillStyle='#ccc';cx.fillText('弹匣',284,15);const mw=96/p.mag;for(let i=0;i<p.mag;i++){cx.fillStyle=i<p.ammo?'#ff3e8a':'#ffffff22';cx.fillRect(314+i*mw,8,Math.max(2,mw-2),12)}
+ // action bar
+ const acts=['steer','gear','fire','reload'],keys=['A/D','W','J','K'],cw=(W-20)/4;
+ for(let i=0;i<4;i++){const a=acts[i],x=10+i*cw,y=30,on=G.active===a,c=COL[a];
+  cx.fillStyle=on?c:'#ffffff0d';rr(x+2,y,cw-4,28,6);cx.fill();cx.lineWidth=on?2:1;cx.strokeStyle=c;cx.globalAlpha=on?1:.55;cx.stroke();cx.globalAlpha=1;
+  let pr=0;if(a==='gear')pr=p.gearT;if(a==='reload')pr=p.reloadT/reloadTime();if(pr>0){cx.fillStyle=on?'rgba(16,8,32,.35)':c+'55';cx.fillRect(x+4,y+23,(cw-8)*pr,3)}
+  cx.textAlign='center';cx.fillStyle=on?'#140a20':c;cx.font='bold 14px sans-serif';cx.fillText(NAME[a],x+cw/2-10,y+13);cx.font='10px sans-serif';cx.fillText(keys[i],x+cw/2+20,y+14)}
+ // status line
+ cx.textAlign='left';cx.font='bold 13px sans-serif';
+ if(G.lastIntr){const L=G.lastIntr;cx.globalAlpha=Math.min(1,L.t*2);cx.fillStyle='#ff6060';cx.fillText('被打断：',10,74);cx.fillStyle=COL[L.from];cx.fillText(NAME[L.from]+' ✕',64,74);cx.fillStyle='#fff';cx.fillText('←',112,74);cx.fillStyle=COL[L.to];cx.fillText(NAME[L.to],128,74);cx.globalAlpha=1}
+ else{cx.fillStyle=G.active?COL[G.active]:'#999';cx.fillText(G.active?'正在：'+NAME[G.active]:'空闲（车在惯性滑行）',10,74)}
+ cx.textAlign='right';cx.fillStyle='#fff';const segTxt='第 '+(G.seg+1)+'/5 段 · '+fmt(G.time);cx.fillText(segTxt,W-10,70);
+ let prog=G.seg<4?(p.d-G.segStart)/SEGS[G.seg].len:(G.boss?1-Math.max(0,G.boss.hp)/G.boss.max:0);cx.fillStyle='#ffffff22';cx.fillRect(W-150,82,140,5);cx.fillStyle=G.seg<4?'#3ef0ff':'#ff3e8a';cx.fillRect(W-150,82,140*clamp(prog,0,1),5);
+ if(G.seg===4){cx.textAlign='left';cx.fillStyle='#ff3e8a';cx.font='bold 10px sans-serif';cx.fillText('BOSS',W-182,85)}
+ // speed
+ cx.textAlign='left';cx.font='11px sans-serif';cx.fillStyle='#bbb';cx.fillText(Math.round(p.speed/2.2)+' km/h',10,90);
+ if(G.msg){cx.textAlign='center';cx.font='bold 20px sans-serif';cx.globalAlpha=Math.min(1,G.msg.t*2);cx.fillStyle='#0008';const tw=cx.measureText(G.msg.text).width;cx.fillRect(W/2-tw/2-12,HUDH+18,tw+24,32);cx.fillStyle='#fff';cx.fillText(G.msg.text,W/2,HUDH+35);cx.globalAlpha=1}}
+// ---------- layout ----------
+function layout(){const touch=matchMedia('(pointer:coarse)').matches||innerWidth<700;$('touch').classList.toggle('on',touch);
+ const avH=innerHeight-(touch?96:0),s=Math.min(innerWidth/W,avH/H),cw=Math.floor(W*s),ch=Math.floor(H*s),dpr=Math.min(2,devicePixelRatio||1);
+ cv.style.width=cw+'px';cv.style.height=ch+'px';cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);cx.setTransform(cv.width/W,0,0,cv.height/H,0,0);
+ $('stage').style.width=cw+'px';$('stage').style.height=ch+'px';$('touch').style.width=Math.max(cw,Math.min(innerWidth,420))+'px';
+ $('wrap').style.justifyContent=touch?'flex-start':'center'}
+addEventListener('resize',layout);layout();
+// ---------- loop ----------
+let last=performance.now(),acc=0;const STEP=1/60;
+function loop(t){acc+=Math.min(.1,(t-last)/1000);last=t;while(acc>=STEP){update(STEP);acc-=STEP}render();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+// ---------- debug API ----------
+window.__game={get G(){return G},roadX,press,release,start,pickMod,MODS,SEGS,PAR,effective,
+ setMod(id,v=true){G.mods[id]=v;if(id==='bigMag'){G.p.mag=20;G.p.ammo=20}},
+ skipTo(seg){G.seg=seg;G.es=[];startSeg()},
+ sim(sec,bot,autoPick=true){const n=Math.round(sec*60);for(let i=0;i<n;i++){if(G.state==='race'){bot&&bot(G);update(STEP)}else if(G.state==='upgrade'&&autoPick)pickMod(0);else if(G.state==='result')break;else update(STEP)}
+  return {state:G.state,win:G.win,seg:G.seg,hp:G.p.hp,time:G.time,stars:G.stars,kills:G.stats.kills,dmg:G.stats.dmg}},
+ offer:()=>offer.map(m=>m.id)};
+})();
+</script></body></html>
